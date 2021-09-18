@@ -1,0 +1,957 @@
+
+// JtlImportDlg.cpp: Implementierungsdatei
+//
+
+#include "stdafx.h"
+#include "JtlImport.h"
+#include "JtlImportDlg.h"
+#include "afxdialogex.h"
+#include "CSVFile.h"
+
+#ifdef _DEBUG
+#define new DEBUG_NEW
+#endif
+
+
+// CJtlImportDlg-Dialogfeld
+
+#define LINE_IMPORT_HEADER  _T("Artikel;Anzahl;Lager;Hinzu\r\n");
+
+#define LAGER_NAME_FBA      _T("FBA: Nomadics")
+#define LAGER_NAME_RUECK    _T("Rücklaufer")
+#define LAGER_NAME_TROPLO   _T("Lager Troplowitz") 
+#define LAGER_NAME_RESELLER _T("Reseller")
+
+#define DEF_LAGER           LAGER_NAME_TROPLO
+
+
+
+
+CJtlImportDlg::CJtlImportDlg(CWnd* pParent /*=NULL*/)
+	: CDialogEx(CJtlImportDlg::IDD, pParent)
+{
+	m_hIcon = AfxGetApp()->LoadIcon(IDR_MAINFRAME);
+}
+
+void CJtlImportDlg::DoDataExchange(CDataExchange* pDX)
+{
+    CDialogEx::DoDataExchange(pDX);
+    DDX_Control(pDX, IDC_COMBO_LAGER, m_cmbLager);
+    DDX_Control(pDX, IDC_COMBO_TYPE, m_cmbTyp);
+}
+
+BEGIN_MESSAGE_MAP(CJtlImportDlg, CDialogEx)
+	ON_WM_PAINT()
+	ON_WM_QUERYDRAGICON()
+  ON_BN_CLICKED(IDC_OPEN, &CJtlImportDlg::OnBnClickedOpen)
+    ON_BN_CLICKED(IDC_OPEN2, &CJtlImportDlg::OnBnClickedOpen2)
+    ON_BN_CLICKED(IDC_EXCEL_IMPORT, &CJtlImportDlg::OnBnClickedExcelImport)
+    ON_BN_CLICKED(IDC_REMISSION, &CJtlImportDlg::OnBnClickedRemission)
+END_MESSAGE_MAP()
+
+
+// CJtlImportDlg-Meldungshandler
+
+BOOL CJtlImportDlg::OnInitDialog()
+{
+	CDialogEx::OnInitDialog();
+
+	// Symbol für dieses Dialogfeld festlegen. Wird automatisch erledigt
+	//  wenn das Hauptfenster der Anwendung kein Dialogfeld ist
+	SetIcon(m_hIcon, TRUE);			// Großes Symbol verwenden
+	SetIcon(m_hIcon, FALSE);		// Kleines Symbol verwenden
+    
+    m_cmbLager.SetCurSel(0);
+    m_cmbTyp.SetCurSel(1);
+
+	return TRUE;  // TRUE zurückgeben, wenn der Fokus nicht auf ein Steuerelement gesetzt wird
+}
+
+// Wenn Sie dem Dialogfeld eine Schaltfläche "Minimieren" hinzufügen, benötigen Sie
+//  den nachstehenden Code, um das Symbol zu zeichnen. Für MFC-Anwendungen, die das 
+//  Dokument/Ansicht-Modell verwenden, wird dies automatisch ausgeführt.
+
+void CJtlImportDlg::OnPaint()
+{
+	if (IsIconic())
+	{
+		CPaintDC dc(this); // Gerätekontext zum Zeichnen
+
+		SendMessage(WM_ICONERASEBKGND, reinterpret_cast<WPARAM>(dc.GetSafeHdc()), 0);
+
+		// Symbol in Clientrechteck zentrieren
+		int cxIcon = GetSystemMetrics(SM_CXICON);
+		int cyIcon = GetSystemMetrics(SM_CYICON);
+		CRect rect;
+		GetClientRect(&rect);
+		int x = (rect.Width() - cxIcon + 1) / 2;
+		int y = (rect.Height() - cyIcon + 1) / 2;
+
+		// Symbol zeichnen
+		dc.DrawIcon(x, y, m_hIcon);
+	}
+	else
+	{
+		CDialogEx::OnPaint();
+	}
+}
+
+// Die System ruft diese Funktion auf, um den Cursor abzufragen, der angezeigt wird, während der Benutzer
+//  das minimierte Fenster mit der Maus zieht.
+HCURSOR CJtlImportDlg::OnQueryDragIcon()
+{
+	return static_cast<HCURSOR>(m_hIcon);
+}
+
+
+#define GROESSE_SIZE_MIN 34
+#define GROESSE_SIZE_MAX 46
+
+typedef struct tagARTIKELCOUNT
+{
+  CString szName;                                  // JC Camel
+  int     countSize[GROESSE_SIZE_MAX-GROESSE_SIZE_MIN+1];
+} ARTIKELCOUNT;
+
+typedef struct tagARTFIND
+{
+  CString szBezeichnung;                           // JC Camel
+  int     groesse;
+} ARTFIND;
+
+// Zuordnung zur Map:
+// DefName   -> Struktur
+// JCxxCamel -> ARTIKELCOUNT
+typedef CMap<CString, LPCSTR, ARTIKELCOUNT, ARTIKELCOUNT> CArtMap;
+typedef CMap<CString, LPCSTR, ARTFIND, ARTFIND>           CArtFindMap;
+
+
+typedef struct tagARTPAIR
+{
+  LPCSTR lpszBezeichnung;
+  LPCSTR lspzFormat;
+} ARTPAIR;
+
+class CArtikel
+{
+  public:
+    CArtikel()  {};
+
+  public:
+    void    AddType(LPCSTR lpszArtikelBezeichnung, LPCSTR lpszFormatArtikelNummer);
+    int     AddArtikel(LPCSTR lpszArtikelNr,  int artikelMenge);
+    CString GetFirstLine();
+    CString GetArtikelLine(LPCSTR lpszArtikel);
+
+  protected:
+    CArtMap     m_mapArtikel;
+    CArtFindMap m_mapFinder;
+    
+
+};
+
+// Aufruf
+// AddType("JC Camel", "jc%2dcamel");
+void CArtikel::AddType(LPCSTR lpszArtikelBezeichnung, LPCSTR lpszFormatArtikelNummer)
+{
+  ARTIKELCOUNT artCount;
+  ARTFIND      find;
+  CString      szBezeichnung; 
+  int          groessenCount;
+
+  // Zunächst Finder anlegen 
+  find.szBezeichnung = lpszArtikelBezeichnung;
+  for (int groesse=GROESSE_SIZE_MIN; groesse<=GROESSE_SIZE_MAX; groesse++)
+  {
+     szBezeichnung.Format(lpszFormatArtikelNummer, groesse);
+     find.groesse = groesse;
+     m_mapFinder[szBezeichnung] = find;
+  }
+
+  // Nun die Artikel-Map
+  groessenCount   = GROESSE_SIZE_MAX-GROESSE_SIZE_MIN+1;
+  artCount.szName = lpszArtikelBezeichnung;
+  for (int i=0; i<groessenCount; i++)
+    artCount.countSize[i] = 0;
+  
+  m_mapArtikel[lpszArtikelBezeichnung]=artCount;
+
+}
+
+int CArtikel::AddArtikel(LPCSTR lpszArtikelNr,  int artikelMenge)
+{
+   // Suche nun nach dem Artkel und finde Nummer und Bezeichnung ...
+  ARTIKELCOUNT artCount;
+  ARTFIND      artFind;
+  int          Index;
+  int          menge = 0;
+  
+  if (m_mapFinder.Lookup(lpszArtikelNr, artFind) && m_mapArtikel.Lookup(artFind.szBezeichnung, artCount) && (Index = artFind.groesse - GROESSE_SIZE_MIN) >= 0)
+  {
+    artCount.countSize[Index]           +=artikelMenge;
+    m_mapArtikel[artFind.szBezeichnung]  = artCount;
+    menge                                = artikelMenge;
+  }
+
+  return menge;
+}
+
+
+CString CArtikel::GetFirstLine()
+{
+  CString szLine, szGroesse;
+  szLine = "\"Artikel\"";
+  for (int groesse=GROESSE_SIZE_MIN; groesse<=GROESSE_SIZE_MAX; groesse++)
+  {
+    szGroesse.Format(";\"%d\"", groesse);
+    szLine += szGroesse;
+  }
+  szLine += "\r\n";
+  return szLine;
+}
+
+CString CArtikel::GetArtikelLine(LPCSTR lpszArtikel)
+{
+  
+  ARTIKELCOUNT artCount;
+  CString      szLine, szCount;
+  int          groessenCount;
+  
+  szLine = "";
+  if (m_mapArtikel.Lookup(lpszArtikel, artCount))
+  {
+    szLine.Format("\"%s\"", lpszArtikel);
+    groessenCount   = GROESSE_SIZE_MAX-GROESSE_SIZE_MIN+1;
+    for (int i=0; i<groessenCount; i++)
+    {
+      szCount.Format(";\"%d\"", artCount.countSize[i]);
+      szLine += szCount;
+    }
+    szLine += "\r\n";
+  }
+  return szLine;
+}
+
+
+
+#define FELDNAME_ARTIKEL     "Artikelnummer"
+#define FELDNAME_MENGE       "Menge"
+#define FELDNAME_VEWRFUEGBAR "Verfügbar"
+#define FELDNAME_LG_TROPLO   "Lagerbestand Lager Troplowitz"
+#define FELDNAME_LG_FBA      "Lagerbestand FBA: Nomadics"
+#define FELDNAME_RESELLER    "Lagerbestand Reseller"
+
+#define ARTIKEL_NAME_ARR                                               \
+{                                                                      \
+  {"JC camel","jc%2dcamel"},                                           \
+  {"JC sage","jc%2dsage"},                                             \
+  {"JC cafe","jc%2dcafe"},                                             \
+  {"JC black","jc%2dblack"},                                           \
+  {"JC red","jc%2dred"},                                               \
+  {"JC pumpkin","jc%2dpumpkin"},                                       \
+  {"JC brick burgundy","jc%2dburgundy"},                               \
+  {"San Juan Camel","sj%2dcamel"},                                     \
+  {"JC camel mit Sohle","xxjc%2dcamel"},                               \
+  {"JC black mit Sohle","xxjc%2dblack"},                               \
+  {"Mountain Momma beige","mm-camel-%2d"},                             \
+  {"Doppel Decker Platform JC camel","platform-camel-%2d"},            \
+  {"Slip on camel","slip-camel-%2d"},                                  \
+  {"Romano camel","rom%2dcamel"},                                      \
+  {"Flower Flop","ff%2dtan-or"},                                       \
+  {"Jester camel","jester%2dcamel"},                                   \
+  {"Toe Joe camel","tj-camel-%2d"},                                    \
+  {"Toe Joe navy", "tj-navy-%2d"},                                     \
+  {"JC Disco Black","jc%2ddiscoblack"},                                \
+  {"Slip on black","slip-black-%2d"},                                  \
+  {"Slip on gray", "slip-gray-%2d"},                                   \
+  {"Slip on denim", "slip-denim-%2d"},                                 \
+  {"JC gray", "jc%2dgray"}                                             \
+}
+
+
+void CJtlImportDlg::AddItemToImport(LPCSTR lpszItem, int count, CString& csvLine)
+{
+    if (NULL == lpszItem)
+    {
+        m_importLines = 0;
+        csvLine = LINE_IMPORT_HEADER;
+    }
+    else if (m_importLines >= 0)
+    {
+        CString szLine;
+        szLine.Format("%s;%d;%s;Y\r\n", lpszItem, count, m_ExportLager);
+        csvLine += szLine;
+        m_importLines += 1;
+    }
+}
+
+
+
+
+#define FIELD_NAME__ORDER_ID  _T("order-id")
+#define FIELD_NAME__SKU       _T("sku")
+#define FIELD_NAME_EINHEITEN  _T("shipped-quantity")
+
+void CJtlImportDlg::DoImportAmazonRemission(LPCSTR lpszFilePath, LPCSTR lpsPath, LPCSTR lpszName)
+{
+    ARTPAIR      arrArtPair[] = ARTIKEL_NAME_ARR;
+    CCSVFile     csv(lpszFilePath, ';');
+    CStringArray arrFields;
+    CString      szMenge, szNewCsv, szNewFilePath, szFileInfoPath, szType, szMissing, szJTLImport;
+    CArtikel     artikel;
+    bool         fHeaderFound, fSameOrder;
+    int          i, pairCount, length;
+    int          indexSKU, indexOrderId, indexCount, minIndexCount, totalMenge, TotalEinheiten, sollmenge, istmenge, missingtotal;
+    CStringArray arrMissing;
+    CString      orderID;
+
+    m_importLines = -1;
+
+    GetLager();
+
+    // Typ: hier immer auf addieren ...
+    m_cmbTyp.SetCurSel(0);
+
+    pairCount = sizeof(arrArtPair) / sizeof(ARTPAIR);
+    fHeaderFound    = false;
+    indexSKU        = -1;
+    indexCount      = -1;
+    indexOrderId    = -1;
+    TotalEinheiten  = 0;
+    totalMenge      = 0;
+    missingtotal    = 0;
+    
+    szType = "_AmazonRemission";
+
+    // Initialisiere Header ...
+    AddItemToImport(NULL, 0, szJTLImport);
+
+    while (csv.ReadData(arrFields))
+    {
+        if (!fHeaderFound)
+        {
+            for (i = 0; i < arrFields.GetCount() && (indexSKU < 0 || indexCount < 0); i++)
+            {
+                if (indexOrderId < 0 && arrFields[i].Find(FIELD_NAME__ORDER_ID) >= 0)
+                    indexOrderId = i;
+                else if (indexSKU < 0 && arrFields[i].Find(FIELD_NAME__SKU) >= 0)
+                    indexSKU = i;
+                else if (indexCount < 0 && arrFields[i].Find(FIELD_NAME_EINHEITEN) >= 0)
+                    indexCount = i;
+            }
+            fHeaderFound = indexOrderId >= 0 && indexCount >= 0 && indexSKU >= 0;
+            if (fHeaderFound)
+            {
+                minIndexCount = max(indexCount, indexSKU) + 1;
+                for (i = 0; i < pairCount; i++)
+                    artikel.AddType(arrArtPair[i].lpszBezeichnung, arrArtPair[i].lspzFormat);
+            }
+            else
+            {
+                indexSKU = -1;
+                indexCount = -1;
+            }
+        }
+        else
+        {
+            if (orderID.IsEmpty())
+                orderID = arrFields[indexOrderId];
+            fSameOrder = orderID == arrFields[indexOrderId];
+            if (fSameOrder && arrFields.GetCount() >= minIndexCount)
+            {
+                sollmenge = atoi(arrFields[indexCount]);
+                TotalEinheiten += sollmenge;
+                istmenge = artikel.AddArtikel(arrFields[indexSKU], sollmenge);
+                AddItemToImport(arrFields[indexSKU], sollmenge, szJTLImport);
+                totalMenge += istmenge;
+                if (sollmenge != istmenge)
+                {
+                    szMissing.Format("- % 2d * %s", sollmenge, arrFields[indexSKU]);
+                    arrMissing.Add(szMissing);
+                    missingtotal += (sollmenge - istmenge);
+                }
+
+            }
+
+        }
+
+    }
+
+    // Schreibe Import-Datei 
+    if (m_importLines > 0)
+    {
+
+        szNewFilePath.Format("%s\\JTL_Import_%s_%s.csv", lpsPath, lpszName, szType);
+
+        length = szJTLImport.GetLength();
+        CFile fl;
+        if (fl.Open(szNewFilePath, CFile::modeCreate | CFile::modeWrite))
+        {
+            fl.Write((LPCSTR)szJTLImport, length);
+            fl.Close();
+        }
+
+
+    }
+
+    if (totalMenge > 0)
+    {
+        // Wenn bis hier, dann schreiben ..
+        szNewCsv = artikel.GetFirstLine();
+        for (i = 0; i < pairCount; i++)
+            szNewCsv += artikel.GetArtikelLine(arrArtPair[i].lpszBezeichnung);
+
+        szNewFilePath.Format("%s\\%s_%s.csv", lpsPath, lpszName, szType);
+        szFileInfoPath.Format("%s\\%s_%s.txt", lpsPath, lpszName, szType);
+
+        length = szNewCsv.GetLength();
+        CFile fl;
+        if (fl.Open(szNewFilePath, CFile::modeCreate | CFile::modeWrite))
+        {
+            fl.Write((LPCSTR)szNewCsv, length);
+            fl.Close();
+        }
+
+        CString szMsg, szInfo;
+        // if (fTotalEinheiten)
+        {
+            if (totalMenge == TotalEinheiten)
+                szInfo.Format("Vorgabe Gesamtmenge: %d\nGelese Einheiten: %d\nAlle Artikel wurden erfasst.", TotalEinheiten, totalMenge);
+            else
+            {
+                CString szMissing;
+                for (int i = 0; i < arrMissing.GetCount(); i++)
+                {
+                    szMissing += arrMissing[i];
+                    szMissing += "\n";
+                }
+                szInfo.Format("Vorgabe Gesamtmenge: %d\r\nGelese Einheiten: %d\r\n\r\nACHTUNG\r\n%d Artikel wurden laut Exportdatei nicht erfasst.\r\n\r\nErmittelte Gesamtzahl der fehlenden Artikel: %d\r\nNicht erfasst:\r\n%s", TotalEinheiten, totalMenge, TotalEinheiten - totalMenge, missingtotal, szMissing);
+            }
+
+        }
+        /*
+        else
+        {
+            szMsg.Format("Insgesamt wurden %d Einheiten gesendet.", totalMenge);
+        }
+        */
+        szMsg.Format("Die Datei %s wurde erzeugt.\nAls Info die Datei %s.\n\n%s", szNewFilePath, szFileInfoPath, szInfo);
+        MessageBox(szMsg, "Info", MB_OK);
+
+        length = szInfo.GetLength();
+        if (fl.Open(szFileInfoPath, CFile::modeCreate | CFile::modeWrite))
+        {
+            fl.Write((LPCSTR)szInfo, length);
+            fl.Close();
+        }
+
+    }
+    else
+        MessageBox("Die Datei enthält keine gültigen Remissions-Daten", "Info", MB_OK);
+
+}
+
+
+
+#define FIELD_NAME__SKU       _T("SKU")
+#define FIELD_NAME_EINHEITEN  _T("Versendete Einheiten")
+#define FIELD_EINHEITEN_TOTAL _T("Einheiten insgesamt")
+
+void CJtlImportDlg::DoImportAmazonSendung(LPCSTR lpszFilePath, LPCSTR lpsPath, LPCSTR lpszName)
+{
+    ARTPAIR      arrArtPair[] = ARTIKEL_NAME_ARR;
+    CCSVFile     csv(lpszFilePath, '\t');
+    CStringArray arrFields;
+    CString      szMenge, szNewCsv, szNewFilePath, szType, szMissing, szJTLImport;
+    CArtikel     artikel;
+    bool         fHeaderFound, fTotalEinheiten;
+    int          i, pairCount, length;
+    int          indexSKU, indexCount, minIndexCount, totalMenge, TotalEinheiten, sollmenge, istmenge, missingtotal;
+    CStringArray arrMissing;
+    
+    m_importLines   = -1;
+
+    GetLager();
+    
+    // Typ: hier immer auf abziehen ...
+    m_cmbTyp.SetCurSel(1);
+
+    pairCount       = sizeof(arrArtPair) / sizeof(ARTPAIR);
+    fHeaderFound    = false;
+    fTotalEinheiten = false;
+    indexSKU        = -1;
+    indexCount      = -1;
+    TotalEinheiten  =  0;
+    totalMenge      =  0;
+    missingtotal    =  0;
+    szType          ="_AmazonVersand";
+
+    // Initialisiere Header ...
+    AddItemToImport(NULL, 0, szJTLImport);
+
+    while (csv.ReadData(arrFields))
+    {
+        if (!fHeaderFound)
+        {
+            for (i = 0; i < arrFields.GetCount() && (indexSKU < 0 || indexCount < 0); i++)
+            {
+                if (indexSKU < 0 && arrFields[i].Find(FIELD_NAME__SKU) >= 0)
+                   indexSKU = i;
+                else if (indexCount < 0 && arrFields[i].Find(FIELD_NAME_EINHEITEN) >= 0)
+                   indexCount = i;
+                if (!fTotalEinheiten && (fTotalEinheiten = (arrFields[i].Find(FIELD_EINHEITEN_TOTAL) >= 0)) && i + 1 < arrFields.GetCount())
+                    TotalEinheiten = atoi(arrFields[i + 1]);
+            }
+            fHeaderFound  = indexCount >= 0 && indexSKU >= 0;
+            if (fHeaderFound)
+            {
+                minIndexCount = max(indexCount, indexSKU) + 1;
+                for (i = 0; i < pairCount; i++)
+                    artikel.AddType(arrArtPair[i].lpszBezeichnung, arrArtPair[i].lspzFormat);
+            }
+            else
+            {
+                indexSKU   = -1;
+                indexCount = -1;
+            }
+        }
+        else
+        {
+            if (arrFields.GetCount() >= minIndexCount)
+            {
+                sollmenge = atoi(arrFields[indexCount]);
+                istmenge  = artikel.AddArtikel(arrFields[indexSKU], sollmenge);
+                AddItemToImport(arrFields[indexSKU], -sollmenge, szJTLImport);
+                totalMenge += istmenge;
+                if (sollmenge != istmenge)
+                {
+                    szMissing.Format("- % 2d * %s", sollmenge, arrFields[indexSKU]);
+                    arrMissing.Add(szMissing);
+                    missingtotal += (sollmenge -istmenge);
+                }
+
+            }
+
+        }
+
+    }
+
+    // Schreibe Import-Datei 
+    if (m_importLines > 0)
+    {
+        
+        szNewFilePath.Format("%s\\JTL_Import_%s_%s.csv", lpsPath, lpszName, szType);
+
+        length = szJTLImport.GetLength();
+        CFile fl;
+        if (fl.Open(szNewFilePath, CFile::modeCreate | CFile::modeWrite))
+        {
+            fl.Write((LPCSTR)szJTLImport, length);
+            fl.Close();
+        }
+
+
+    }
+
+    if (totalMenge > 0)
+    {
+        // Wenn bis hier, dann schreiben ..
+        szNewCsv = artikel.GetFirstLine();
+        for (i = 0; i < pairCount; i++)
+            szNewCsv += artikel.GetArtikelLine(arrArtPair[i].lpszBezeichnung);
+
+        szNewFilePath.Format("%s\\%s_%s.csv", lpsPath, lpszName, szType);
+
+        length = szNewCsv.GetLength();
+        CFile fl;
+        if (fl.Open(szNewFilePath, CFile::modeCreate | CFile::modeWrite))
+        {
+            fl.Write((LPCSTR)szNewCsv, length);
+            fl.Close();
+        }
+
+        CString szMsg, szInfo;
+        if (fTotalEinheiten)
+        {
+            if (totalMenge == TotalEinheiten)
+                szInfo.Format("Vorgabe Gesamtmenge: %d\nGelese Einheiten: %d\nAlle Artikel wurden erfasst.", TotalEinheiten, totalMenge);
+            else
+            {
+                CString szMissing;
+                for (int i=0; i<arrMissing.GetCount(); i++)
+                {
+                    szMissing += arrMissing[i];
+                    szMissing += "\n";
+                }
+                szInfo.Format("Vorgabe Gesamtmenge: %d\nGelese Einheiten: %d\n\nACHTUNG\n%d Artikel wurden laut Exportdatei nicht erfasst.\n\nErmittelte Gesamtzahl der fehlenden Artikel: %d\nNicht erfasst:\n%s", TotalEinheiten, totalMenge, TotalEinheiten - totalMenge, missingtotal, szMissing);
+            }
+
+        }
+        else
+        {
+            szMsg.Format("Insgesamt wurden %d Einheiten gesendet.", totalMenge);
+        }
+
+        szMsg.Format("Die Datei %s wurde erzeugt.\n\n%s", szNewFilePath, szInfo);
+        MessageBox(szMsg, "Info", MB_OK);
+
+    }
+    else
+        MessageBox("Die Datei enthält keine gültigen Lagerversand-Daten", "Info", MB_OK);
+
+}
+
+// Lagerbestand Lager Troplowitz
+// Lagerbestand FBA: Nomadics
+
+bool LagerTroploUndFBA(CStringArray& arrFields, int &indexTroplo, int& indexFBA, int &indexVerfuegbar)
+{
+    indexTroplo     = -1;
+    indexFBA        = -1;
+    indexVerfuegbar = -1;
+
+    for (int i = 0; i < arrFields.GetCount() && (indexTroplo < 0 || indexFBA < 0 || indexVerfuegbar < 0); i++)
+    {
+        if (indexTroplo < 0 && arrFields[i] == FELDNAME_LG_TROPLO)
+            indexTroplo = i;
+        if (indexFBA < 0 && arrFields[i] == FELDNAME_LG_FBA)
+            indexFBA = i;
+        else if(indexVerfuegbar < 0 && arrFields[i] == FELDNAME_VEWRFUEGBAR)
+            indexVerfuegbar = i;
+    }
+    return indexTroplo > 0 && indexFBA > 0 && indexVerfuegbar > 0;
+
+}
+
+void CJtlImportDlg::DoImport(LPCSTR lpszFilePath, LPCSTR lpsPath, LPCSTR lpszName)
+{
+   
+  
+    ARTPAIR      arrArtPair[] = ARTIKEL_NAME_ARR;
+    CCSVFile     csv(lpszFilePath);
+    CArtikel     artikel;
+    CArtikel     artikelTroplowitz;
+
+    CStringArray arrFields;
+    CString      szArtikel, szMenge, szNewCsv, szNewFilePath, szNewCsvTroplo, szNewFilePathTroplo, szType;
+    int          arrNrArtikel, arrNrCount;
+    int          indexTroplo, indexFBA, indexVerfuegbar;
+    int          i, count, pairCount, length, totalMenge = 0, lineCount = 0;
+    bool         fVerkauf, fMitZweiLager, artikelSum;
+
+    arrNrArtikel  = -1;
+    arrNrCount    = -1;
+    fVerkauf      = true;
+    fMitZweiLager = false;
+
+
+    pairCount    = sizeof(arrArtPair) / sizeof(ARTPAIR);
+    
+    while (csv.ReadData(arrFields))
+    {
+      if (0 == lineCount)
+      {
+        // Analysiere die erste Zeile ..
+        for (i=0; i<arrFields.GetCount() && (arrNrCount < 0 || arrNrArtikel < 0); i++)
+        {
+          if (arrNrArtikel < 0 && arrFields[i] == FELDNAME_ARTIKEL)
+            arrNrArtikel = i;
+          else if (arrNrCount < 0 && arrFields[i]== FELDNAME_MENGE)
+          {
+            arrNrCount = i;
+            szType     = "_Verkauf";
+          }
+          else if (arrNrCount < 0 && arrFields[i]== FELDNAME_VEWRFUEGBAR)
+          {
+            fMitZweiLager = LagerTroploUndFBA(arrFields, indexTroplo, indexFBA, indexVerfuegbar);
+            arrNrCount    = i;
+            szType        = "_Lager";
+            fVerkauf      = false;
+          }
+        }
+        if (arrNrCount < 0 || arrNrArtikel < 0)
+        {
+          CString szMsg;
+          szMsg.Format("Dies ist nicht die korrekte Datei.\n\nEs wird eine csv-Datei erwwartet mit mindestens folgenden Feldern:\n%s\n%s\n\nDer Vorgang wird abgebrochen.", FELDNAME_ARTIKEL FELDNAME_MENGE);
+          MessageBox(szMsg, "Achtung", MB_OK | MB_ICONEXCLAMATION);
+          return;  
+        }
+        else
+        {
+          
+          for (i=0; i<pairCount; i++)
+          {
+            artikel.AddType(arrArtPair[i].lpszBezeichnung, arrArtPair[i].lspzFormat);
+            artikelTroplowitz.AddType(arrArtPair[i].lpszBezeichnung, arrArtPair[i].lspzFormat);
+          }
+        }
+
+      }
+      else
+      {
+        
+        count     = arrFields.GetCount();
+        if (fMitZweiLager)
+        {
+            if (arrNrCount < count && arrNrArtikel < count && arrFields[arrNrArtikel].GetLength() > 0)
+            {
+                artikelSum = 0;
+                if (arrFields[indexTroplo].GetLength() > 0)
+                    artikelSum += artikelTroplowitz.AddArtikel(arrFields[arrNrArtikel],  atoi(arrFields[indexTroplo]));
+                if (arrFields[indexFBA].GetLength() > 0)
+                    artikelSum += artikel.AddArtikel(arrFields[arrNrArtikel], atoi(arrFields[indexFBA]));
+                totalMenge += artikelSum;
+            }
+        }
+        else
+        {
+            if (arrNrCount < count && arrNrArtikel < count && arrFields[arrNrCount].GetLength() > 0 && arrFields[arrNrArtikel].GetLength() > 0)
+                totalMenge += artikel.AddArtikel(arrFields[arrNrArtikel], atoi(arrFields[arrNrCount]));
+        }
+      }
+      lineCount++;
+    }
+
+    // Wenn bis hier, dann schreiben ..
+    szNewCsv = artikel.GetFirstLine();
+    for (i=0; i<pairCount; i++)
+      szNewCsv += artikel.GetArtikelLine(arrArtPair[i].lpszBezeichnung);
+    
+    if (fMitZweiLager)
+    {
+        szNewFilePath.Format("%s\\%s_FBA_%s.csv", lpsPath, lpszName, szType);
+        szNewFilePathTroplo.Format("%s\\%s_Troplo_%s.csv", lpsPath, lpszName, szType);
+
+        szNewCsvTroplo = artikelTroplowitz.GetFirstLine();
+        for (i = 0; i < pairCount; i++)
+            szNewCsvTroplo += artikelTroplowitz.GetArtikelLine(arrArtPair[i].lpszBezeichnung);
+        
+
+    }
+    else
+    {
+        szNewFilePath.Format("%s\\%s_%s.csv", lpsPath, lpszName, szType);
+    }
+
+
+    length = szNewCsv.GetLength();
+    CFile fl, flTroplo;
+    if (fl.Open(szNewFilePath, CFile::modeCreate | CFile::modeWrite))
+    {
+      fl.Write((LPCSTR)szNewCsv, length);
+      fl.Close();
+    }
+
+    if (fMitZweiLager)
+    {
+        if (flTroplo.Open(szNewFilePathTroplo, CFile::modeCreate | CFile::modeWrite))
+        {
+            flTroplo.Write((LPCSTR)szNewCsvTroplo, szNewCsvTroplo.GetLength());
+            flTroplo.Close();
+        }
+
+    }
+
+
+    CString szMsg;
+    if (fVerkauf)
+      szMsg.Format("Die Datei %s wurde erzeugt.\n\nInsgesamt wurden %d Artikel verkauft.", szNewFilePath, totalMenge);
+    else
+      szMsg.Format("Die Datei %s wurde erzeugt.\n\nInsgesamt sind %d Artikel verfügbar.", szNewFilePath, totalMenge);
+    
+    MessageBox(szMsg, "Info", MB_OK);
+
+}
+
+
+void CJtlImportDlg::GetLager(void)
+{
+    m_ExportLager = DEF_LAGER;
+    switch (m_cmbLager.GetCurSel())
+    {
+        case 0:  m_ExportLager = LAGER_NAME_TROPLO; break;
+        case 1:  m_ExportLager = LAGER_NAME_FBA;    break;
+        case 2:  m_ExportLager = LAGER_NAME_RUECK;  break;
+        case 3:  m_ExportLager = LAGER_NAME_RESELLER;  break;
+    }
+}
+
+#define EI_NAME_ARTIKEL _T("Artikel")
+
+#define ARTIKEL_NAME_IMPORT_ARR                                        \
+{                                                                      \
+  {"JC camel","jc%2dcamel"},                                           \
+  {"JC sage","jc%2dsage"},                                             \
+  {"JC cafe","jc%2dcafe"},                                             \
+  {"JC black","jc%2dblack"},                                           \
+  {"JC red","jc%2dred"},                                               \
+  {"JC pumpkin","jc%2dpumpkin"},                                       \
+  {"JC brick burgundy","jc%2dburgundy"},                               \
+  {"San Juan Camel","sj%2dcamel"},                                     \
+  {"San Juan","sj%2dcamel"},                                           \
+  {"JC camel mit Sohle","xxjc%2dcamel"},                               \
+  {"JC black mit Sohle","xxjc%2dblack"},                               \
+  {"Mountain Momma beige","mm-camel-%2d"},                             \
+  {"Doppel Decker Platform JC camel","platform-camel-%2d"},            \
+  {"Slip on camel","slip-camel-%2d"},                                  \
+  {"Romano camel","rom%2dcamel"},                                      \
+  {"Flower Flop","ff%2dtan-or"},                                       \
+  {"Jester camel","jester%2dcamel"},                                   \
+  {"Toe Joe camel","tj-camel-%2d"},                                    \
+  {"Toe Joe navy", "tj-navy-%2d"},                                     \
+  {"JC Disco Black","jc%2ddiscoblack"},                                \
+  {"Slip on black","slip-black-%2d"},                                  \
+  {"Slip on gray", "slip-gray-%2d"},                                   \
+  {"Slip on denim", "slip-denim-%2d"},                                 \
+  {"JC gray", "jc%2dgray"}                                             \
+}
+
+
+void CJtlImportDlg::DoExcelImport(LPCSTR lpszFilePath, LPCSTR lpsPath, LPCSTR lpszName)
+{
+
+    CStringArray arrFields;
+    
+    ARTPAIR      arrArtPair[] = ARTIKEL_NAME_IMPORT_ARR;
+    CUIntArray   arrSize;
+    CString      szFormat, szArtikelName, szLine, csvLine, szNewFilePath;
+    UINT         value;
+    bool         fHasHeader;
+    int          wert, faktor, length;
+    int          i, indexArtikel, indexStartSize, indexBez, indArtikel, indexSize;
+    int          pairCount = sizeof(arrArtPair) / sizeof(ARTPAIR);
+    int          countTotal;
+    
+    CCSVFile     csv(lpszFilePath);
+
+    faktor        = m_cmbTyp.GetCurSel() == 0 ? +1 : -1;
+    csvLine       = LINE_IMPORT_HEADER;
+    m_importLines = 0;
+    fHasHeader    = false;
+    indexArtikel  = -1;
+    countTotal    =  0;
+    
+    GetLager();
+
+    while (csv.ReadData(arrFields))
+    {
+        if (!fHasHeader)
+        {
+            for (i = 0; i < arrFields.GetCount(); i++)
+            {
+                if (arrFields[i] == EI_NAME_ARTIKEL)
+                {
+                    indexArtikel   = i;
+                    indexStartSize = i + 1;
+                    fHasHeader     = true;
+                    continue;
+                }
+                if (indexArtikel >= 0)
+                {
+                    value = atoi(arrFields[i]);
+                    arrSize.Add(value);
+                }
+            }
+        }
+        else
+        {
+            // Finde den Artikel ..
+            if (indexArtikel < arrFields.GetCount())
+            {
+                indexBez = -1;
+                for (indArtikel = 0; indexBez < 0 && indArtikel < pairCount; indArtikel++)
+                {
+                    arrFields[indexArtikel].TrimRight();
+                    if (arrFields[indexArtikel] == arrArtPair[indArtikel].lpszBezeichnung)
+                    {
+                        szFormat = arrArtPair[indArtikel].lspzFormat;
+                        indexBez = indArtikel;
+                    }
+                }
+                for (indArtikel = indexStartSize; indexBez >= 0 && indArtikel < arrFields.GetCount(); indArtikel += 1)
+                {
+                    indexSize = indArtikel - indexStartSize;
+                    if (indexSize < arrSize.GetSize())
+                    {
+                        value = arrSize[indexSize];
+                        szArtikelName.Format(szFormat, value);
+                        wert = atoi(arrFields[indArtikel]);
+                        if (abs(wert) > 0)
+                        {
+                            szLine.Format("%s;%d;%s;Y\r\n", szArtikelName, faktor*wert, m_ExportLager);
+                            csvLine += szLine;
+                            m_importLines += 1;
+                            countTotal    += wert;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if (m_importLines > 0)
+    {
+        szNewFilePath.Format("%s\\JTL_Import_%s_%s.csv", lpsPath, lpszName, "_Lager");
+
+        length = csvLine.GetLength();
+        CFile fl;
+        if (fl.Open(szNewFilePath, CFile::modeCreate | CFile::modeWrite))
+        {
+            fl.Write((LPCSTR)csvLine, length);
+            fl.Close();
+        }
+
+        CString szMsg;
+        szMsg.Format("Es wurde die JTL-Importdatei %s\nmit %d Datensätzen erzeugt.\n\nDie Gesamtzahl der Artikel beträgt %d.", szNewFilePath, m_importLines, countTotal);
+        MessageBox(szMsg, "Info", MB_OK);
+    }
+
+}
+
+
+
+void CJtlImportDlg::OnBnClickedOpen()
+{
+  
+  CFileDialog dlg(TRUE);
+  if (dlg.DoModal() == IDOK)
+  {
+    /*
+    CString szMsg;
+    szMsg = dlg.GetFolderPath();  // Pfad ohne \\
+    szMsg += "\n";
+    szMsg += dlg.GetFileName();
+    szMsg += "\n";
+    szMsg += dlg.GetFileTitle();  // Name ohne Endung
+    szMsg += "\n";
+    szMsg += dlg.GetPathName();
+    szMsg += "\n";
+    szMsg += dlg.GetFileExt();
+    MessageBox(szMsg, "Info", MB_OK);
+    */
+    DoImport(dlg.GetPathName(), dlg.GetFolderPath(), dlg.GetFileTitle());
+  }
+}
+
+
+void CJtlImportDlg::OnBnClickedOpen2()
+{
+    CFileDialog dlg(TRUE);
+    if (dlg.DoModal() == IDOK)
+        DoImportAmazonSendung(dlg.GetPathName(), dlg.GetFolderPath(), dlg.GetFileTitle());
+}
+
+void CJtlImportDlg::OnBnClickedExcelImport()
+{
+    CFileDialog dlg(TRUE);
+    if (dlg.DoModal() == IDOK)
+        DoExcelImport(dlg.GetPathName(), dlg.GetFolderPath(), dlg.GetFileTitle());
+}
+
+
+void CJtlImportDlg::OnBnClickedRemission()
+{
+    CFileDialog dlg(TRUE);
+    if (dlg.DoModal() == IDOK)
+        DoImportAmazonRemission(dlg.GetPathName(), dlg.GetFolderPath(), dlg.GetFileTitle());
+}
