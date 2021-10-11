@@ -1,4 +1,5 @@
 
+
 // JtlImportDlg.cpp: Implementierungsdatei
 //
 
@@ -28,9 +29,23 @@
 
 
 CJtlImportDlg::CJtlImportDlg(CWnd* pParent /*=NULL*/)
-	: CDialogEx(CJtlImportDlg::IDD, pParent)
+	          :CDialogEx(CJtlImportDlg::IDD, pParent)
 {
 	m_hIcon = AfxGetApp()->LoadIcon(IDR_MAINFRAME);
+
+    m_monthMap["Jan"] = 1;
+    m_monthMap["Feb"] = 2;
+    m_monthMap["Mar"] = 3;
+    m_monthMap["Apr"] = 4;
+    m_monthMap["May"] = 5;
+    m_monthMap["Jun"] = 6;
+    m_monthMap["Jul"] = 7;
+    m_monthMap["Aug"] = 8;
+    m_monthMap["Sep"] = 9;
+    m_monthMap["Oct"] = 10;
+    m_monthMap["Nov"] = 11;
+    m_monthMap["Dec"] = 12;
+
 }
 
 void CJtlImportDlg::DoDataExchange(CDataExchange* pDX)
@@ -43,10 +58,11 @@ void CJtlImportDlg::DoDataExchange(CDataExchange* pDX)
 BEGIN_MESSAGE_MAP(CJtlImportDlg, CDialogEx)
 	ON_WM_PAINT()
 	ON_WM_QUERYDRAGICON()
-  ON_BN_CLICKED(IDC_OPEN, &CJtlImportDlg::OnBnClickedOpen)
+    ON_BN_CLICKED(IDC_OPEN, &CJtlImportDlg::OnBnClickedOpen)
     ON_BN_CLICKED(IDC_OPEN2, &CJtlImportDlg::OnBnClickedOpen2)
     ON_BN_CLICKED(IDC_EXCEL_IMPORT, &CJtlImportDlg::OnBnClickedExcelImport)
     ON_BN_CLICKED(IDC_REMISSION, &CJtlImportDlg::OnBnClickedRemission)
+    ON_BN_CLICKED(IDC_OSS_TAX, &CJtlImportDlg::OnBnClickedOssTax)
 END_MESSAGE_MAP()
 
 
@@ -453,9 +469,9 @@ void CJtlImportDlg::DoImportAmazonRemission(LPCSTR lpszFilePath, LPCSTR lpsPath,
 
 
 
-#define FIELD_NAME__SKU       _T("SKU")
-#define FIELD_NAME_EINHEITEN  _T("Versendete Einheiten")
-#define FIELD_EINHEITEN_TOTAL _T("Einheiten insgesamt")
+#define FIELD_NAME__AMAZON_SKU        _T("SKU")
+#define FIELD_NAME_AMAZON_EINHEITEN   _T("Versendete Einheiten")
+#define FIELD_EINHEITEN_TOTAL         _T("Einheiten insgesamt")
 
 void CJtlImportDlg::DoImportAmazonSendung(LPCSTR lpszFilePath, LPCSTR lpsPath, LPCSTR lpszName)
 {
@@ -495,9 +511,9 @@ void CJtlImportDlg::DoImportAmazonSendung(LPCSTR lpszFilePath, LPCSTR lpsPath, L
         {
             for (i = 0; i < arrFields.GetCount() && (indexSKU < 0 || indexCount < 0); i++)
             {
-                if (indexSKU < 0 && arrFields[i].Find(FIELD_NAME__SKU) >= 0)
+                if (indexSKU < 0 && arrFields[i].Find(FIELD_NAME__AMAZON_SKU) >= 0)
                    indexSKU = i;
-                else if (indexCount < 0 && arrFields[i].Find(FIELD_NAME_EINHEITEN) >= 0)
+                else if (indexCount < 0 && arrFields[i].Find(FIELD_NAME_AMAZON_EINHEITEN) >= 0)
                    indexCount = i;
                 if (!fTotalEinheiten && (fTotalEinheiten = (arrFields[i].Find(FIELD_EINHEITEN_TOTAL) >= 0)) && i + 1 < arrFields.GetCount())
                     TotalEinheiten = atoi(arrFields[i + 1]);
@@ -908,6 +924,525 @@ void CJtlImportDlg::DoExcelImport(LPCSTR lpszFilePath, LPCSTR lpsPath, LPCSTR lp
 
 }
 
+#define SET_AS_INDEX(id) int _##id = -1;
+#define GET_AS_INDEX(id) _##id = mapHeaderIndex[headerNameArr[id]];
+
+double GetPreis(LPCSTR szPreis)
+{
+    double pr = 0;
+    if (szPreis)
+    {
+        CString preis(szPreis);
+        if (preis.GetLength() > 0)
+        {
+            preis.Replace(',', '.');
+            pr = atof(preis);
+        }
+    }
+    return pr;
+}
+
+CString CJtlImportDlg::GetDate(LPCSTR lpszData)
+{
+    CString szDate = lpszData;
+    int len = strlen(lpszData);
+    if (len > 11 && lpszData[2] == '-' && lpszData[6] == '-')
+    {
+        int mon, t;
+
+        char tag[3], monat[4], jahr[5];
+        memcpy(tag, lpszData, 2);
+        tag[2] = '\0';
+        t = atoi(tag);
+        memcpy(monat, lpszData + 3, 3);
+        monat[3] = '\0';
+        memcpy(jahr, lpszData + 7, 4);
+        jahr[4] = '\0';
+
+        if (m_monthMap.Lookup(monat, mon))
+            szDate.Format("%02d.%02d.%s", t, mon, jahr);
+    }
+    return szDate;
+
+}
+
+
+
+int TaxGetDay(LPCSTR lpszDate)
+{
+  int days = 0;
+  if (strlen(lpszDate) == 10 && lpszDate[2] == '.' && lpszDate[5] == '.')
+  {
+    int t, m, j;
+    char tag[3], monat[4], jahr[5];
+    
+    memcpy(tag, lpszDate, 2);
+    tag[2] = '\0';
+    t = atoi(tag);
+    memcpy(monat, lpszDate + 3, 3);
+    monat[3] = '\0';
+    m = atoi(monat);
+    memcpy(jahr, lpszDate + 7, 4);
+    jahr[4] = '\0';
+    j = atoi(jahr);
+    days = 366 * (j - 2000) + 31 * m + t;
+  }
+  return days;
+}
+
+
+int TaxCompare(CString& szFirst, CString& szNext, int idISO, int idDate)
+{
+  CStringArray arrFirst, arrNext;
+  CCSVFile csv(';');
+  int      cmp = 0;
+  
+  if (csv.DirectReadData(szFirst, arrFirst) && csv.DirectReadData(szNext, arrNext) && arrFirst.GetCount() == arrNext.GetCount())
+  {
+    cmp = arrFirst[idISO].Compare(arrNext[idISO]);
+    if (0 == cmp)
+    {
+      int dayFirst = TaxGetDay(arrFirst[idDate]);
+      int dayNext  = TaxGetDay(arrNext[idDate]);
+      cmp = dayFirst - dayNext;
+    }
+  }
+  return cmp;
+}
+
+CTaxRechnung::CTaxRechnung()
+             :m_dfBetragBrutto(0)
+             ,m_dfBetragNetto(0)
+             ,m_dfBetragUmst(0)
+{
+}
+
+void CTaxRechnung::SetBetragString(void)
+{
+  m_szBetragBrutto.Format("%02.2f", m_dfBetragBrutto);
+  m_szBetragBrutto.Replace(".", ",");
+  
+  m_szBetragUmst.Format("%02.2f", m_dfBetragUmst);
+  m_szBetragUmst.Replace(".", ",");
+
+  m_szBetragNetto.Format("%02.2f", m_dfBetragNetto);
+  m_szBetragNetto.Replace(".", ",");
+}
+
+
+void CJtlImportDlg::MapRemoveAll(CMapTaxRechnung& map)
+{
+  for (CMapTaxRechnung::CPair* pCurVal = map.PGetFirstAssoc(); pCurVal != NULL; pCurVal = map.PGetNextAssoc(pCurVal))
+    delete pCurVal->value;
+  map.RemoveAll();
+}
+
+
+void CJtlImportDlg::DoAmazonTaxReportOSS(LPCSTR lpszFilePath, LPCSTR lpsPath, LPCSTR lpszName)
+{
+  CMapTaxRechnung *pMapTaxRechnung;
+  CMapTaxRechnung  mapOSSRechnung, mapOSSGutschrift;
+  CMapTaxRechnung  mapEUVatRechnung, mapEUVatGutschrift;
+  CTaxRechnung    *pTaxRechnung;
+  CStringArray     arrFields, arrOSSLines, arrEUVatLines;
+  CCSVFile         csv(lpszFilePath, ',');
+  CString          szMessage, szError, szOSS, szTyp, szUmsteuer, szFaktor, szUmstID, curLine, szDatumOrder, szDatumTax,
+                   szBetragPreis, szBetragUmst, szBetragNetto, szFileNameOSS, szFileNameUmst, szFile, szHeaderOSS, szHeaderEUVat;
+  CFile            fl;
+
+  double           dfBetragPreis, dfBetragUmst, dfBetragNetto, dfLandUmst, dfWaehrungFaktor;
+  enum             dataType { typeReturn, typeRechnung, typeRefund, typeUndefined } type;
+  bool             fHasError, fLineError, fOSS, fEUVat;
+  int              i, countHeaderFields, countHeaderFldName, lineCount, index;
+                   
+  LPCSTR           headerNameArr[] = AS_HEADER_FLD_NAME;
+
+  szFileNameOSS = lpsPath;
+    
+  szFile     = lpszName;
+  szFile.Replace(".csv", "");
+    
+  szFileNameOSS.Format("%s\\%s_Amazon_OSS.csv", lpsPath, szFile);
+  szFileNameUmst.Format("%s\\%s_Amazon_EU_VAT.csv", lpsPath, szFile);
+
+  SET_AS_INDEX(AS_INDEX_MARKETPLACE)
+  SET_AS_INDEX(AS_INDEX_DATUM)
+  SET_AS_INDEX(AS_INDEX_TYP)
+  SET_AS_INDEX(AS_INDEX_BESTELLNR_EXT)
+  SET_AS_INDEX(AS_INDEX_SKU)
+  SET_AS_INDEX(AS_INDEX_ANZAHL)
+  SET_AS_INDEX(AS_TAX_CALC_DATE)
+  SET_AS_INDEX(AS_INDEX_TAX_REP_SCHEME)
+  SET_AS_INDEX(AS_INDEX_UMST)
+  SET_AS_INDEX(AS_INDEX_WAEHRUNG)
+  SET_AS_INDEX(AS_INDEX_PREIS_BRUTTO)
+  SET_AS_INDEX(AS_INDEX_PREIS_UMST)
+  SET_AS_INDEX(AS_INDEX_PREIS_NETTO)
+  SET_AS_INDEX(AS_INDEX_VERSAND_BRUTTO)
+  SET_AS_INDEX(AS_INDEX_VERSAND_UMST)
+  SET_AS_INDEX(AS_INDEX_VERSAND_NETTO)
+  SET_AS_INDEX(AS_INDEX_VERSAND_AKT_BRUTTO)
+  SET_AS_INDEX(AS_INDEX_VERSAND_AKT_UMST)
+  SET_AS_INDEX(AS_INDEX_VERSAND_AKT_NETTO)
+  SET_AS_INDEX(AS_INDEX_GESCHENK_BRUTTO)
+  SET_AS_INDEX(AS_INDEX_GESCHENK_UMST)
+  SET_AS_INDEX(AS_INDEX_GESCHENK_NETTO)
+  SET_AS_INDEX(AS_INDEX_UMST_ID_KAEUFER)
+  SET_AS_INDEX(AS_INDEX_UMST_ID_LAND)
+  SET_AS_INDEX(AS_INDEX_UMST_BERECHNET_CUR)
+  SET_AS_INDEX(AS_INDEX_FAKTOR_WAEHRUNG)
+  SET_AS_INDEX(AS_INDEX_UMST_BERECHNET)
+  SET_AS_INDEX(AS_INDEX_EXPORT_NONEU)
+  SET_AS_INDEX(AS_INDEX_EMPF_PLZ)
+  SET_AS_INDEX(AS_INDEX_EMPF_STADT)
+  SET_AS_INDEX(AS_INDEX_EMPF_ISO)
+
+  CMap<CString, LPCSTR, int, int> mapHeaderIndex;
+
+  countHeaderFldName = sizeof(headerNameArr) / sizeof(LPCSTR);
+  lineCount  = 0;
+  fLineError = false;
+  szError    = "Unbekannter Fehler";
+    
+  szHeaderOSS   = "Bestelldatum;Rechnungsdatum;Bestellnummer;Betrag Brutto;Betrag Umst.;Betrag Netto;Umsatzsteuer;ISO Empfänger;Typ";
+  szHeaderEUVat = "Bestelldatum;Rechnungsdatum;Bestellnummer;Betrag Brutto;Betrag Netto;ISO Empfänger;ISO Umst.;Umsatzsteuer-ID;Typ";
+
+
+  while (!fLineError && csv.ReadData(arrFields))
+  {
+
+      fHasError = false;
+
+      if (0 == lineCount++)
+      {
+          // Prüfe die erste Zeile
+          countHeaderFields = arrFields.GetCount();
+          for (i = 0; i < arrFields.GetCount(); i++)
+              mapHeaderIndex[arrFields[i]] = i;
+
+          for (i = 0; i < countHeaderFldName && !fHasError; i++)
+              fHasError = !mapHeaderIndex.Lookup(headerNameArr[i], index);
+
+          if (!fHasError)
+          {
+              GET_AS_INDEX(AS_INDEX_MARKETPLACE)
+              GET_AS_INDEX(AS_INDEX_DATUM)
+              GET_AS_INDEX(AS_INDEX_TYP)
+              GET_AS_INDEX(AS_INDEX_BESTELLNR_EXT)
+              GET_AS_INDEX(AS_INDEX_SKU)
+              GET_AS_INDEX(AS_INDEX_ANZAHL)
+              GET_AS_INDEX(AS_TAX_CALC_DATE)
+              GET_AS_INDEX(AS_INDEX_TAX_REP_SCHEME)
+              GET_AS_INDEX(AS_INDEX_UMST)
+              GET_AS_INDEX(AS_INDEX_WAEHRUNG)
+              GET_AS_INDEX(AS_INDEX_PREIS_BRUTTO)
+              GET_AS_INDEX(AS_INDEX_PREIS_UMST)
+              GET_AS_INDEX(AS_INDEX_PREIS_NETTO)
+              GET_AS_INDEX(AS_INDEX_VERSAND_BRUTTO)
+              GET_AS_INDEX(AS_INDEX_VERSAND_UMST)
+              GET_AS_INDEX(AS_INDEX_VERSAND_NETTO)
+              GET_AS_INDEX(AS_INDEX_VERSAND_AKT_BRUTTO)
+              GET_AS_INDEX(AS_INDEX_VERSAND_AKT_UMST)
+              GET_AS_INDEX(AS_INDEX_VERSAND_AKT_NETTO)
+              GET_AS_INDEX(AS_INDEX_GESCHENK_BRUTTO)
+              GET_AS_INDEX(AS_INDEX_GESCHENK_UMST)
+              GET_AS_INDEX(AS_INDEX_GESCHENK_NETTO)
+              GET_AS_INDEX(AS_INDEX_UMST_ID_KAEUFER)
+              GET_AS_INDEX(AS_INDEX_UMST_ID_LAND)
+              GET_AS_INDEX(AS_INDEX_UMST_BERECHNET_CUR)
+              GET_AS_INDEX(AS_INDEX_FAKTOR_WAEHRUNG)
+              GET_AS_INDEX(AS_INDEX_UMST_BERECHNET)
+              GET_AS_INDEX(AS_INDEX_EXPORT_NONEU)
+              GET_AS_INDEX(AS_INDEX_EMPF_PLZ)
+              GET_AS_INDEX(AS_INDEX_EMPF_STADT)
+              GET_AS_INDEX(AS_INDEX_EMPF_ISO)
+          }
+          else
+              szError = "Anzahl der Feldnamen stimmt nicht mit der Vorgabe überein";
+
+          fLineError = fHasError;
+      }
+      else
+      {
+          szOSS    = arrFields[_AS_INDEX_TAX_REP_SCHEME];
+          szTyp    = arrFields[_AS_INDEX_TYP];
+          szUmstID = arrFields[_AS_INDEX_UMST_ID_KAEUFER];
+            
+            
+          type    = szTyp == "REFUND"   ? typeRefund   :            (
+                    szTyp == "SHIPMENT" ? typeRechnung :             (
+                    szTyp == "RETURN"   ? typeReturn : typeUndefined ));
+
+          fOSS    = szOSS == "VCS_EU_OSS";
+
+          szUmsteuer = arrFields[_AS_INDEX_UMST];
+          dfLandUmst = 100.0 * atof(szUmsteuer);
+          szUmsteuer.Format("%2.1f", dfLandUmst);
+
+          dfWaehrungFaktor = 1;
+          szFaktor         = arrFields[_AS_INDEX_FAKTOR_WAEHRUNG];
+          if (szFaktor.GetLength() > 0)
+          {
+              double fak = atof(szFaktor);
+              if (0 < fak)
+                  dfWaehrungFaktor = (double)1.0 / fak;
+          }
+
+          fEUVat = (int)(100 * dfLandUmst + 0.05) == 0 && szUmstID.GetLength() > 0;
+
+          szDatumOrder = GetDate(arrFields[_AS_INDEX_DATUM]);
+          szDatumTax   = GetDate(arrFields[AS_TAX_CALC_DATE]);
+
+          if (fOSS || fEUVat)
+          {
+              dfBetragPreis = GetPreis(arrFields[_AS_INDEX_PREIS_BRUTTO]) + GetPreis(arrFields[_AS_INDEX_VERSAND_BRUTTO]) + GetPreis(arrFields[_AS_INDEX_VERSAND_AKT_BRUTTO]) + GetPreis(arrFields[AS_INDEX_GESCHENK_BRUTTO]);
+              dfBetragUmst  = GetPreis(arrFields[_AS_INDEX_PREIS_UMST])   + GetPreis(arrFields[_AS_INDEX_GESCHENK_UMST])  + GetPreis(arrFields[_AS_INDEX_VERSAND_UMST])       + GetPreis(arrFields[AS_INDEX_VERSAND_AKT_UMST]);
+              dfBetragNetto = dfBetragPreis - dfBetragUmst;
+                
+              szBetragPreis.Format("%02.2f", dfBetragPreis);
+              szBetragPreis.Replace(".", ",");
+
+              szBetragUmst.Format("%02.2f", dfBetragUmst);
+              szBetragUmst.Replace(".", ",");
+                
+              szBetragNetto.Format("%02.2f", dfBetragNetto);
+              szBetragNetto.Replace(".", ",");
+
+          }
+
+          // Daten nur von Interesse, wenn OSS ...
+          pMapTaxRechnung = NULL;
+          if (fOSS)
+          {
+            
+            if (typeRefund == type || typeReturn == type)
+              pMapTaxRechnung = &mapOSSGutschrift;
+            else
+              pMapTaxRechnung = &mapOSSRechnung;
+            
+            // curLine.Format("\r\n%s;%s;%s;%s;%s;%s;%s;%s;%s", szDatumOrder, szDatumTax, arrFields[_AS_INDEX_BESTELLNR_EXT], szBetragPreis, szBetragUmst, szBetragNetto, arrFields[_AS_INDEX_UMST], arrFields[AS_INDEX_EMPF_ISO], szTyp);
+            // arrOSSLines.Add(curLine);
+          }
+          else if (fEUVat)
+          {
+
+            if (typeRefund == type || typeReturn == type)
+              pMapTaxRechnung = &mapEUVatGutschrift;
+            else
+              pMapTaxRechnung = &mapEUVatRechnung;
+
+            // curLine.Format("\r\n%s;%s;%s;%s;%s;%s;%s;%s;%s", szDatumOrder, szDatumTax, arrFields[_AS_INDEX_BESTELLNR_EXT], szBetragPreis, szBetragNetto, arrFields[AS_INDEX_EMPF_ISO], arrFields[AS_INDEX_UMST_ID_LAND], arrFields[AS_INDEX_UMST_ID_KAEUFER], szTyp);
+            // arrEUVatLines.Add(curLine);
+          }
+
+          if (pMapTaxRechnung)
+          {
+            if (!pMapTaxRechnung->Lookup(arrFields[_AS_INDEX_BESTELLNR_EXT], pTaxRechnung))
+            {
+              pTaxRechnung                       = new CTaxRechnung();
+              
+              pTaxRechnung->m_dfBetragBrutto     = dfBetragPreis;
+              pTaxRechnung->m_dfBetragNetto      = dfBetragNetto;
+              pTaxRechnung->m_dfBetragUmst       = dfBetragUmst;
+
+              pTaxRechnung->m_szDatumOrder       = szDatumOrder;
+              pTaxRechnung->m_szDatumTax         = szDatumTax;
+              pTaxRechnung->m_szBestellnummer    = arrFields[_AS_INDEX_BESTELLNR_EXT];
+
+              pTaxRechnung->m_szEmpfIso          = arrFields[AS_INDEX_EMPF_ISO];
+              pTaxRechnung->m_szTaxIso           = arrFields[AS_INDEX_UMST_ID_LAND];
+              pTaxRechnung->m_szUmstID           = arrFields[AS_INDEX_UMST_ID_KAEUFER];
+              
+              pTaxRechnung->m_szUmsatzSteuerSatz = arrFields[_AS_INDEX_UMST];
+
+              pMapTaxRechnung->SetAt(arrFields[_AS_INDEX_BESTELLNR_EXT], pTaxRechnung);
+              
+              pTaxRechnung->m_szTyp              = szTyp;
+
+            }
+            else
+            {
+              pTaxRechnung->m_dfBetragBrutto    += dfBetragPreis;
+              pTaxRechnung->m_dfBetragNetto     += dfBetragNetto;
+              pTaxRechnung->m_dfBetragUmst      += dfBetragUmst;
+            }
+
+          }
+
+      }
+
+      if (fHasError)
+      {
+          szMessage.Format("Es trat folgender Fehler auf:\n%s\n", szError);
+          MessageBox(szMessage, "Achtung", MB_OK);
+      }
+      else
+      { 
+        arrFields.RemoveAll();
+      }
+  }
+
+  if (!fHasError)
+  {
+    arrOSSLines.RemoveAll();
+    AddMapToLines(mapOSSRechnung,     arrOSSLines,   true);
+    AddMapToLines(mapOSSGutschrift,   arrOSSLines,   true);
+    
+    arrEUVatLines.RemoveAll();
+    AddMapToLines(mapEUVatRechnung,   arrEUVatLines, false);
+    AddMapToLines(mapEUVatGutschrift, arrEUVatLines, false);
+  }
+
+
+  if (!fHasError)
+  {
+    CStringArray arrLine;
+    CString      szFilenName, szCurLand, szLand;
+    CCSVFile     csv(';');
+    bool         fFileOpen;
+
+    DoSort(arrOSSLines, TaxCompare, true);
+    if (fl.Open(szFileNameOSS, CFile::modeCreate | CFile::modeWrite))
+    {
+        fl.Write((LPCSTR)szHeaderOSS, szHeaderOSS.GetLength());
+        for (i = 0; i < arrOSSLines.GetCount(); i++)
+            fl.Write((LPCSTR)arrOSSLines[i], arrOSSLines[i].GetLength());
+        fl.Close();
+
+        szMessage.Format("Die OSS-Datei\n%s\nwurde erzeugt.\n\nAnzahl der Datensätze: %d", szFileNameOSS, arrOSSLines.GetCount());
+        MessageBox(szMessage, "Info", MB_OK);
+    }
+
+    DoSort(arrEUVatLines, TaxCompare, false);
+    if (fl.Open(szFileNameUmst, CFile::modeCreate | CFile::modeWrite))
+    {
+
+        fl.Write((LPCSTR)szHeaderEUVat, szHeaderEUVat.GetLength());
+        for (i = 0; i < arrEUVatLines.GetCount(); i++)
+            fl.Write((LPCSTR)arrEUVatLines[i], arrEUVatLines[i].GetLength());
+        fl.Close();
+
+        szMessage.Format("Die EU-Vat-Datei\n%s\nwurde erzeugt.\n\nAnzahl der Datensätze: %d", szFileNameUmst, arrEUVatLines.GetCount());
+        MessageBox(szMessage, "Info", MB_OK);
+    }
+
+    // Länderabhängig
+    
+    // OSS
+    fFileOpen = false;
+    szCurLand = "";
+    for (i = 0; i < arrOSSLines.GetCount(); i++)
+    {
+      csv.DirectReadData(arrOSSLines[i], arrLine);
+      szLand = arrLine[7];
+      if (szLand != szCurLand)
+      {
+        szCurLand = szLand;
+        if (fFileOpen)
+          fl.Close();
+        szFilenName.Format("%s\\%s_Amazon_OSS_%s.csv", lpsPath, szFile, szLand);
+        fFileOpen = fl.Open(szFilenName, CFile::modeCreate | CFile::modeWrite);
+        if (fFileOpen)
+          fl.Write((LPCSTR)szHeaderOSS, szHeaderOSS.GetLength());
+      }
+      if (fFileOpen)
+        fl.Write((LPCSTR)arrOSSLines[i], arrOSSLines[i].GetLength());
+    }
+    if (fFileOpen)
+      fl.Close();
+
+
+    // EU_VAT
+    fFileOpen = false;
+    szCurLand = "";
+    for (i = 0; i < arrEUVatLines.GetCount(); i++)
+    {
+      csv.DirectReadData(arrEUVatLines[i], arrLine);
+      szLand = arrLine[6];
+      if (szLand != szCurLand)
+      {
+        szCurLand = szLand;
+        if (fFileOpen)
+          fl.Close();
+        szFilenName.Format("%s\\%s_Amazon_EU_VAT_%s.csv", lpsPath, szFile, szLand);
+        fFileOpen = fl.Open(szFilenName, CFile::modeCreate | CFile::modeWrite);
+        if (fFileOpen)
+          fl.Write((LPCSTR)szHeaderEUVat, szHeaderEUVat.GetLength());
+      }
+      if (fFileOpen)
+        fl.Write((LPCSTR)arrEUVatLines[i], arrEUVatLines[i].GetLength());
+    }
+    if (fFileOpen)
+      fl.Close();
+
+  }
+
+  MapRemoveAll(mapOSSRechnung);
+  MapRemoveAll(mapOSSGutschrift);
+  MapRemoveAll(mapEUVatRechnung);
+  MapRemoveAll(mapEUVatGutschrift);
+
+
+
+
+}
+
+
+void CJtlImportDlg::AddMapToLines(CMapTaxRechnung& mapRechnung, CStringArray& arrLines, bool fOSS)
+{
+
+  CTaxRechnung *pTaxRechnung;
+  CString       curLine;
+
+  for (CMapTaxRechnung::CPair* pCurVal = mapRechnung.PGetFirstAssoc(); pCurVal != NULL; pCurVal = mapRechnung.PGetNextAssoc(pCurVal))
+  {
+    pTaxRechnung = pCurVal->value;
+    pTaxRechnung->SetBetragString();
+    if (fOSS)
+      curLine.Format("\r\n%s;%s;%s;%s;%s;%s;%s;%s;%s",
+        pTaxRechnung->m_szDatumOrder, pTaxRechnung->m_szDatumTax, pTaxRechnung->m_szBestellnummer, pTaxRechnung->m_szBetragBrutto, pTaxRechnung->m_szBetragUmst, pTaxRechnung->m_szBetragNetto,
+        pTaxRechnung->m_szUmsatzSteuerSatz, pTaxRechnung->m_szEmpfIso, pTaxRechnung->m_szTyp);
+    else
+      curLine.Format("\r\n%s;%s;%s;%s;%s;%s;%s;%s;%s",
+        pTaxRechnung->m_szDatumOrder, pTaxRechnung->m_szDatumTax, pTaxRechnung->m_szBestellnummer, pTaxRechnung->m_szBetragBrutto, pTaxRechnung->m_szBetragNetto,
+        pTaxRechnung->m_szEmpfIso, pTaxRechnung->m_szTaxIso, pTaxRechnung->m_szUmstID, pTaxRechnung->m_szTyp);
+    arrLines.Add(curLine);
+  }
+}
+
+
+
+#define TC_INDEX_OSS_ISO   7
+#define TC_INDEX_OSS_DATE  1
+
+#define TC_INDEX_EUVAT_ISO   7
+#define TC_INDEX_EUVAT_DATE  1
+
+void CJtlImportDlg::DoSort(CStringArray &arr, COMPARE comp, bool fOSS)
+{
+  CString save;
+  bool    fChange;
+  int     i, nCount;
+
+  int     indexISO  = fOSS ? TC_INDEX_OSS_ISO  : TC_INDEX_EUVAT_ISO;
+  int     indexData = fOSS ? TC_INDEX_OSS_DATE : TC_INDEX_EUVAT_DATE;
+
+  nCount = arr.GetCount();
+  do
+  {
+    fChange = false;
+    for (i = 0; i < nCount - 1; i++)
+    {
+      if (comp(arr[i], arr[i + 1], indexISO, indexData) > 0)
+      {
+        save       = arr[i];
+        arr[i]     = arr[i + 1];
+        arr[i + 1] = save;
+        fChange    = true;
+      }
+    }
+  } while (fChange);
+}
 
 
 void CJtlImportDlg::OnBnClickedOpen()
@@ -954,4 +1489,11 @@ void CJtlImportDlg::OnBnClickedRemission()
     CFileDialog dlg(TRUE);
     if (dlg.DoModal() == IDOK)
         DoImportAmazonRemission(dlg.GetPathName(), dlg.GetFolderPath(), dlg.GetFileTitle());
+}
+
+void CJtlImportDlg::OnBnClickedOssTax()
+{
+    CFileDialog dlg(TRUE);
+    if (dlg.DoModal() == IDOK)
+        DoAmazonTaxReportOSS(dlg.GetPathName(), dlg.GetFolderPath(), dlg.GetFileTitle());
 }

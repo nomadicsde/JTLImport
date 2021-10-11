@@ -13,11 +13,17 @@ CFile::modeWrite|CFile::shareDenyWrite|CFile::modeCreate|CFile::typeText)
 #endif
 }
 
+CCSVFile::CCSVFile(char chComma)
+         :m_chComma(chComma)
+         ,m_nMode(modeRead)
+{
+}
+
 CCSVFile::~CCSVFile(void)
 {
 }
 
-bool CCSVFile::ReadData(CStringArray &arr)
+bool CCSVFile::ReadData(CStringArray& arr)
 {
   arr.RemoveAll();
 
@@ -28,6 +34,27 @@ bool CCSVFile::ReadData(CStringArray &arr)
   CString sLine;
   if (!ReadString(sLine))
     return false;
+
+  return DirectReadData(sLine, arr);
+}
+
+
+bool CCSVFile::DirectReadData(LPCSTR lpszLine, CStringArray & arr)
+{
+
+  CString sLine = lpszLine;
+  
+  arr.RemoveAll();
+
+  /*
+  // Verify correct mode in debug build
+  ASSERT(m_nMode == modeRead);
+
+  // Read next line
+  CString sLine;
+  if (!ReadString(sLine))
+    return false;
+  */
 
   LPCTSTR p = sLine;
   int nValue = 0;

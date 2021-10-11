@@ -6,7 +6,9 @@ class CCSVFile : public CStdioFile
 public:
   enum Mode { modeRead, modeWrite };
   CCSVFile(LPCTSTR lpszFilename, char chComma = ';', Mode mode = modeRead);
+  CCSVFile(char chComma);
   ~CCSVFile(void);
+  bool DirectReadData(LPCSTR lpszLine, CStringArray& arr);
   bool ReadData(CStringArray &arr);
   void WriteData(CStringArray &arr);
 #ifdef _DEBUG
