@@ -22,6 +22,7 @@
 #define LAGER_NAME_RUECK    _T("Rücklaufer")
 #define LAGER_NAME_TROPLO   _T("Lager Troplowitz") 
 #define LAGER_NAME_RESELLER _T("Reseller")
+#define LAGER_NAME_MAASHOLM _T("Maasholm")
 
 #define DEF_LAGER           LAGER_NAME_TROPLO
 
@@ -253,9 +254,11 @@ CString CArtikel::GetArtikelLine(LPCSTR lpszArtikel)
 #define FELDNAME_ARTIKEL     "Artikelnummer"
 #define FELDNAME_MENGE       "Menge"
 #define FELDNAME_VEWRFUEGBAR "Verfügbar"
+#define FELDNAME_STAHLMANN   "Lagerbestand Stahlmann_Sachs"
 #define FELDNAME_LG_TROPLO   "Lagerbestand Lager Troplowitz"
-#define FELDNAME_LG_FBA      "Lagerbestand FBA: Nomadics"
+// #define FELDNAME_LG_FBA      "Lagerbestand FBA: Nomadics"
 #define FELDNAME_RESELLER    "Lagerbestand Reseller"
+#define FELDNAME_LG_FBA       FELDNAME_STAHLMANN
 
 #define ARTIKEL_NAME_ARR                                               \
 {                                                                      \
@@ -789,6 +792,7 @@ void CJtlImportDlg::GetLager(void)
         case 1:  m_ExportLager = LAGER_NAME_FBA;    break;
         case 2:  m_ExportLager = LAGER_NAME_RUECK;  break;
         case 3:  m_ExportLager = LAGER_NAME_RESELLER;  break;
+        case 4:  m_ExportLager = LAGER_NAME_MAASHOLM;  break;
     }
 }
 

@@ -11,8 +11,8 @@ public:
   bool DirectReadData(LPCSTR lpszLine, CStringArray& arr);
   bool ReadData(CStringArray &arr);
   void WriteData(CStringArray &arr);
-#ifdef _DEBUG
+// #ifdef _DEBUG
   Mode m_nMode;
-#endif
+// #endif
   char m_chComma;
 };
