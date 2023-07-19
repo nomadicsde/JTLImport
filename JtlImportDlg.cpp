@@ -26,6 +26,14 @@
 
 #define DEF_LAGER           LAGER_NAME_TROPLO
 
+#define CMB_LAGER_TROPLO              0
+#define CMB_LAGER_FBA                 1
+#define CMB_LAGER_MAASHOLM            2
+#define CMB_LAGER_MAAS_TO_TROPLO      3
+#define CMB_LAGER_TROPLO_TO_MAAS      4
+#define CMB_LAGER_RUEK                5
+#define CMB_LAGER_RESELLER            6
+
 
 
 
@@ -47,6 +55,8 @@ CJtlImportDlg::CJtlImportDlg(CWnd* pParent /*=NULL*/)
     m_monthMap["Nov"] = 11;
     m_monthMap["Dec"] = 12;
 
+    m_nCurLagerSel = -1;
+
 }
 
 void CJtlImportDlg::DoDataExchange(CDataExchange* pDX)
@@ -64,6 +74,7 @@ BEGIN_MESSAGE_MAP(CJtlImportDlg, CDialogEx)
     ON_BN_CLICKED(IDC_EXCEL_IMPORT, &CJtlImportDlg::OnBnClickedExcelImport)
     ON_BN_CLICKED(IDC_REMISSION, &CJtlImportDlg::OnBnClickedRemission)
     ON_BN_CLICKED(IDC_OSS_TAX, &CJtlImportDlg::OnBnClickedOssTax)
+  ON_CBN_SELCHANGE(IDC_COMBO_LAGER, &CJtlImportDlg::OnCbnSelchangeComboLager)
 END_MESSAGE_MAP()
 
 
@@ -808,18 +819,34 @@ void CJtlImportDlg::DoImport(LPCSTR lpszFilePath, LPCSTR lpsPath, LPCSTR lpszNam
     MessageBox(szMsg, "Info", MB_OK);
 
 }
+                             
+void CJtlImportDlg::OnCbnSelchangeComboLager()
+{
+  m_nCurLagerSel = m_cmbLager.GetCurSel();
+  switch (m_nCurLagerSel)
+  {
+  case CMB_LAGER_MAAS_TO_TROPLO: 
+  case CMB_LAGER_TROPLO_TO_MAAS: 
+    m_cmbTyp.EnableWindow(FALSE);
+  break;
+  default:
+    m_cmbTyp.EnableWindow(TRUE);
 
+  }
+}
 
 void CJtlImportDlg::GetLager(void)
 {
     m_ExportLager = DEF_LAGER;
     switch (m_cmbLager.GetCurSel())
     {
-        case 0:  m_ExportLager = LAGER_NAME_TROPLO; break;
-        case 1:  m_ExportLager = LAGER_NAME_FBA;    break;
-        case 2:  m_ExportLager = LAGER_NAME_RUECK;  break;
-        case 3:  m_ExportLager = LAGER_NAME_RESELLER;  break;
-        case 4:  m_ExportLager = LAGER_NAME_MAASHOLM;  break;
+        case CMB_LAGER_TROPLO:          m_ExportLager = LAGER_NAME_TROPLO;    break;
+        case CMB_LAGER_FBA:             m_ExportLager = LAGER_NAME_FBA;       break;
+        case CMB_LAGER_MAASHOLM:        m_ExportLager = LAGER_NAME_MAASHOLM;  break;
+        case CMB_LAGER_MAAS_TO_TROPLO:  m_ExportLager = LAGER_NAME_MAASHOLM;  break;
+        case CMB_LAGER_TROPLO_TO_MAAS:  m_ExportLager = LAGER_NAME_MAASHOLM;  break;
+        case CMB_LAGER_RUEK:            m_ExportLager = LAGER_NAME_RUECK;     break;
+        case CMB_LAGER_RESELLER:        m_ExportLager = LAGER_NAME_RESELLER;  break;
     }
 }
 
@@ -861,7 +888,7 @@ void CJtlImportDlg::DoExcelImport(LPCSTR lpszFilePath, LPCSTR lpsPath, LPCSTR lp
     
     ARTPAIR      arrArtPair[] = ARTIKEL_NAME_IMPORT_ARR;
     CUIntArray   arrSize;
-    CString      szFormat, szArtikelName, szLine, csvLine, szNewFilePath;
+    CString      szFormat, szArtikelName, szLine, csvLine, szNewFilePath, szLagerFrom, szLagerTo;
     UINT         value;
     bool         fHasHeader;
     int          wert, faktor, length;
@@ -925,10 +952,24 @@ void CJtlImportDlg::DoExcelImport(LPCSTR lpszFilePath, LPCSTR lpsPath, LPCSTR lp
                         wert = atoi(arrFields[indArtikel]);
                         if (abs(wert) > 0)
                         {
-                            szLine.Format("%s;%d;%s;Y\r\n", szArtikelName, faktor*wert, m_ExportLager);
+                          if (m_nCurLagerSel != CMB_LAGER_MAAS_TO_TROPLO && m_nCurLagerSel != CMB_LAGER_TROPLO_TO_MAAS)
+                          {
+                            szLine.Format("%s;%d;%s;Y\r\n", szArtikelName, faktor * wert, m_ExportLager);
                             csvLine += szLine;
                             m_importLines += 1;
-                            countTotal    += wert;
+                          }
+                          else
+                          {
+                            szLagerFrom = m_nCurLagerSel == CMB_LAGER_MAAS_TO_TROPLO ? LAGER_NAME_MAASHOLM : LAGER_NAME_TROPLO;
+                            szLagerTo   = m_nCurLagerSel == CMB_LAGER_MAAS_TO_TROPLO ? LAGER_NAME_TROPLO   : LAGER_NAME_MAASHOLM;
+                            
+                            szLine.Format("%s;%d;%s;Y\r\n", szArtikelName, -1 * wert, szLagerFrom);
+                            csvLine += szLine;
+                            szLine.Format("%s;%d;%s;Y\r\n", szArtikelName, +1 * wert, szLagerTo);
+                            csvLine += szLine;
+                            m_importLines += 2;
+                          }
+                          countTotal += wert;
                         }
                     }
                 }
@@ -938,7 +979,10 @@ void CJtlImportDlg::DoExcelImport(LPCSTR lpszFilePath, LPCSTR lpsPath, LPCSTR lp
 
     if (m_importLines > 0)
     {
-        szNewFilePath.Format("%s\\JTL_Import_%s_%s.csv", lpsPath, lpszName, "_Lager");
+        if (m_nCurLagerSel != CMB_LAGER_MAAS_TO_TROPLO && m_nCurLagerSel != CMB_LAGER_TROPLO_TO_MAAS)
+          szNewFilePath.Format("%s\\JTL_Import_%s_%s.csv", lpsPath, lpszName, "_Lager");
+        else
+          szNewFilePath.Format("%s\\JTL_Import_%s_nach_%s.csv", lpsPath, szLagerFrom, szLagerTo);
 
         length = csvLine.GetLength();
         CFile fl;
@@ -1528,3 +1572,6 @@ void CJtlImportDlg::OnBnClickedOssTax()
     if (dlg.DoModal() == IDOK)
         DoAmazonTaxReportOSS(dlg.GetPathName(), dlg.GetFolderPath(), dlg.GetFileTitle());
 }
+
+
+

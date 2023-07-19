@@ -178,10 +178,11 @@ class CJtlImportDlg : public CDialogEx
 
 	// Implementierung
 	protected:
-		CMapStringToInt     m_monthMap;
-		HICON		        m_hIcon;
-		CString				m_ExportLager;
-		int                 m_importLines;
+		CMapStringToInt   m_monthMap;
+		HICON		          m_hIcon;
+		CString				    m_ExportLager;
+		int               m_importLines;
+    int               m_nCurLagerSel;
 
 		// Generierte Funktionen für die Meldungstabellen
 		virtual BOOL OnInitDialog();
@@ -196,4 +197,5 @@ class CJtlImportDlg : public CDialogEx
 	  afx_msg void OnBnClickedExcelImport();
 	  afx_msg void OnBnClickedRemission();
 	  afx_msg void OnBnClickedOssTax();
+	  afx_msg void OnCbnSelchangeComboLager();
 };
