@@ -256,9 +256,10 @@ CString CArtikel::GetArtikelLine(LPCSTR lpszArtikel)
 #define FELDNAME_VEWRFUEGBAR "Verfügbar"
 #define FELDNAME_STAHLMANN   "Lagerbestand Stahlmann_Sachs"
 #define FELDNAME_LG_TROPLO   "Lagerbestand Lager Troplowitz"
+#define FELDNAME_MAASHOLM    "Lagerbestand Lager Maasholm"
+
 // #define FELDNAME_LG_FBA      "Lagerbestand FBA: Nomadics"
 #define FELDNAME_RESELLER    "Lagerbestand Reseller"
-#define FELDNAME_MAASHOLM    "Lagerbestand Maasholm"
 #define FELDNAME_LG_FBA       FELDNAME_STAHLMANN
 
 #define ARTIKEL_NAME_ARR                                               \
@@ -631,11 +632,11 @@ bool LagerTroploUndFBA(CStringArray& arrFields, int &indexTroplo, int& indexFBA,
     indexVerfuegbar = -1;
     indexMaasholm   = -1;
 
-    for (int i = 0; i < arrFields.GetCount() && (indexTroplo < 0 || indexFBA < 0 || indexVerfuegbar < 0); i++)
+    for (int i = 0; i < arrFields.GetCount() && (indexTroplo < 0 || indexFBA < 0 || indexVerfuegbar < 0 || indexMaasholm < 0); i++)
     {
         if (indexTroplo < 0 && arrFields[i] == FELDNAME_LG_TROPLO)
             indexTroplo = i;
-        if (indexFBA < 0 && arrFields[i] == FELDNAME_LG_FBA)
+        else if (indexFBA < 0 && arrFields[i] == FELDNAME_LG_FBA)
             indexFBA = i;
         else if (indexMaasholm < 0 && arrFields[i] == FELDNAME_MAASHOLM)
           indexMaasholm = i;
@@ -725,7 +726,7 @@ void CJtlImportDlg::DoImport(LPCSTR lpszFilePath, LPCSTR lpsPath, LPCSTR lpszNam
                     artikelSum += artikelTroplowitz.AddArtikel(arrFields[arrNrArtikel],  atoi(arrFields[indexTroplo]));
                 if (arrFields[indexFBA].GetLength() > 0)
                     artikelSum += artikel.AddArtikel(arrFields[arrNrArtikel], atoi(arrFields[indexFBA]));
-                if (arrFields[indexMaasholm].GetLength() > 0)
+                if (indexMaasholm >= 0 && arrFields[indexMaasholm].GetLength() > 0)
                   artikelSum += artikelMaasholm.AddArtikel(arrFields[arrNrArtikel], atoi(arrFields[indexMaasholm]));
                 
                 totalMenge += artikelSum;
@@ -754,13 +755,15 @@ void CJtlImportDlg::DoImport(LPCSTR lpszFilePath, LPCSTR lpsPath, LPCSTR lpszNam
         for (i = 0; i < pairCount; i++)
             szNewCsvTroplo += artikelTroplowitz.GetArtikelLine(arrArtPair[i].lpszBezeichnung);
         
-        szNewFilePath.Format("%s\\%s_FBA_%s.csv", lpsPath, lpszName, szType);
-        szNewFilePathMaasholm.Format("%s\\%s_Maasholm_%s.csv", lpsPath, lpszName, szType);
+        if (indexMaasholm >= 0)
+        {
+          szNewFilePath.Format("%s\\%s_FBA_%s.csv", lpsPath, lpszName, szType);
+          szNewFilePathMaasholm.Format("%s\\%s_Maasholm_%s.csv", lpsPath, lpszName, szType);
 
-        szNewCsvMaasholm = artikelTroplowitz.GetFirstLine();
-        for (i = 0; i < pairCount; i++)
-          szNewCsvMaasholm += artikelTroplowitz.GetArtikelLine(arrArtPair[i].lpszBezeichnung);
-
+          szNewCsvMaasholm = artikelMaasholm.GetFirstLine();
+          for (i = 0; i < pairCount; i++)
+            szNewCsvMaasholm += artikelMaasholm.GetArtikelLine(arrArtPair[i].lpszBezeichnung);
+        }
     }
     else
     {
@@ -784,10 +787,13 @@ void CJtlImportDlg::DoImport(LPCSTR lpszFilePath, LPCSTR lpsPath, LPCSTR lpszNam
             flTroplo.Close();
         }
         
-        if (flMaasholm.Open(szNewFilePathMaasholm, CFile::modeCreate | CFile::modeWrite))
+        if (indexMaasholm >= 0)
         {
-          flMaasholm.Write((LPCSTR)szNewCsvMaasholm, szNewCsvMaasholm.GetLength());
-          flMaasholm.Close();
+          if (flMaasholm.Open(szNewFilePathMaasholm, CFile::modeCreate | CFile::modeWrite))
+          {
+            flMaasholm.Write((LPCSTR)szNewCsvMaasholm, szNewCsvMaasholm.GetLength());
+            flMaasholm.Close();
+          }
         }
 
     }
