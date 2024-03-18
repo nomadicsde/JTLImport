@@ -297,7 +297,9 @@ CString CArtikel::GetArtikelLine(LPCSTR lpszArtikel)
   {"Slip on black","slip-black-%2d"},                                  \
   {"Slip on gray", "slip-gray-%2d"},                                   \
   {"Slip on denim", "slip-denim-%2d"},                                 \
-  {"JC gray", "jc%2dgray"}                                             \
+  {"JC gray", "jc%2dgray"},                                            \
+  {"JC mulberry", "jc%2dmulberry"},                                    \
+  {"Buckle mojave desert", "dbuck%2desert"}                            \
 }
 
 
@@ -877,7 +879,9 @@ void CJtlImportDlg::GetLager(void)
   {"Slip on black","slip-black-%2d"},                                  \
   {"Slip on gray", "slip-gray-%2d"},                                   \
   {"Slip on denim", "slip-denim-%2d"},                                 \
-  {"JC gray", "jc%2dgray"}                                             \
+  {"JC gray", "jc%2dgray"},                                            \
+  {"JC mulberry", "jc%2dmulberry"},                                    \
+  {"Buckle mojave desert", "dbuck%2desert"}                            \
 }
 
 
